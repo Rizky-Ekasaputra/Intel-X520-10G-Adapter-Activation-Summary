@@ -1,0 +1,87 @@
+## 🧩 Intel X520 10G Adapter Activation Summary
+
+This guide documents how to activate Intel X520 10G network adapters that fail to load due to unsupported SFP modules.  
+It includes identification, root cause, solution, and post-fix verification steps.
+
+---
+
+### 1. 🔍 Identification
+
+Detected hardware via **PCIe**:
+```bash
+03:00.0 Ethernet controller: Intel Corporation Ethernet 10G 2P X520 Adapter (rev 01)
+03:00.1 Ethernet controller: Intel Corporation Ethernet 10G 2P X520 Adapter (rev 01)
+```
+
+**Problem:**  
+The `ixgbe` driver fails to load because of a third-party SFP module:
+```bash
+ixgbe 0000:03:00.0: failed to load because an unsupported SFP+ or QSFP module type was detected.
+ixgbe 0000:03:00.1: failed to load because an unsupported SFP+ or QSFP module type was detected.
+```
+
+---
+
+### 2. ⚠️ Root Cause
+
+Intel X520 adapters strictly validate SFP modules.  
+If a **non-Intel or third-party** transceiver/DAC is installed, the driver blocks initialization, resulting in error `-95` and missing interfaces (`enp3s0f0`, `enp3s0f1`).
+
+---
+
+### 3. 🛠️ Solution — Allow Unsupported SFP
+
+Force the driver to accept non-Intel transceivers by enabling the `allow_unsupported_sfp` option.
+
+Run the following commands:
+```bash
+echo "options ixgbe allow_unsupported_sfp=1" > /etc/modprobe.d/ixgbe.conf
+update-initramfs -u
+reboot
+```
+
+---
+
+### 4. ✅ Verification After Reboot
+
+Check driver load status:
+```bash
+dmesg | grep ixgbe
+```
+**Expected:**
+```
+ixgbe 0000:03:00.0: Intel(R) 10 Gigabit Network Connection
+ixgbe 0000:03:00.0: NIC Link is Down
+```
+
+Confirm that interfaces are now visible:
+```bash
+ip link show | grep enp3s
+```
+**Expected:**
+```
+enp3s0f0
+enp3s0f1
+```
+
+Check link and speed:
+```bash
+ethtool enp3s0f0
+```
+
+---
+
+### 5. 🧾 Notes
+
+- The `allow_unsupported_sfp=1` parameter is **safe** and widely used by system administrators.
+- Tested and verified with **Firmware 4.30 (0x80002192) / NVM 1.2688.0**.
+- After applying this fix:
+  - Interfaces appear normally in **Proxmox VE Web GUI**.
+  - You can assign them to bridges (e.g. `vmbr0`, `vmbr1`) for VM or Ceph traffic.
+
+---
+
+### 6. 📚 References
+
+- [Intel ixgbe Driver Documentation](https://www.intel.com/content/www/us/en/download/15084/intel-network-adapter-driver-for-pcie-10-gigabit-ethernet-network-connections-under-linux.html)
+- [Proxmox VE Network Configuration Guide](https://pve.proxmox.com/wiki/Network_Configuration)
